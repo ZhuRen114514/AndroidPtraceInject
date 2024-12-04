@@ -371,7 +371,7 @@ int ptrace_writedata(pid_t pid, uint8_t *pWriteAddr, uint8_t *pWriteData, size_t
 int ptrace_call(pid_t pid, uintptr_t ExecuteAddr, long *parameters, long num_params,struct pt_regs *regs){
 #if defined(__i386__) // 模拟器
     // 写入参数到堆栈
-    regs->esp -= (num_params) * sizeof(long); // 分配栈空间，栈的方向是从高地址到低地址
+    regs->esp -= (num_params) * sizeof(long); // 分配栈空间，栈的方向是从高地址到低地址 yuuki 存放参数的应该是
     if (0 != ptrace_writedata(pid, (uint8_t *)regs->esp, (uint8_t *)parameters,(num_params) * sizeof(long))){
         return -1;
     }
