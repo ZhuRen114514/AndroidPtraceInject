@@ -39,6 +39,8 @@ int inject_remote_process(pid_t pid, char *LibPath, char *FunctionName, char *Fl
     /**
      * @brief 开始主要步骤
      */
+
+     //yuuki 加载了注入的so的某个函数
     do{
         // CurrentRegs 当前寄存器
         // OriginalRegs 保存注入前寄存器
@@ -51,19 +53,22 @@ int inject_remote_process(pid_t pid, char *LibPath, char *FunctionName, char *Fl
 
         // 获取mmap函数在远程进程中的地址 以便为libxxx.so分配内存
         // 由于mmap函数在libc.so库中 为了将libxxx.so加载到目标进程中 就需要使用目标进程的mmap函数 所以需要查找到libc.so库在目标进程的起始地址
+        // yuuki 1.获取到的地址是目标虚拟内存空间里的地址，本进程如何调用？
         void *mmap_addr = get_mmap_address(pid);
         printf("[+] mmap RemoteFuncAddr:0x%lx\n", (uintptr_t)mmap_addr);
 
         // mmap映射 <-- 设置mmap的参数
         // void *mmap(void *start, size_t length, int prot, int flags, int fd, off_t offsize);
+        // yuuki 参数表，arm下固定寄存器保存函数参数
         parameters[0] = 0; // 设置为NULL表示让系统自动选择分配内存的地址
         parameters[1] = 0x3000; // 映射内存的大小
         parameters[2] = PROT_READ | PROT_WRITE | PROT_EXEC; // 表示映射内存区域 可读|可写|可执行
-        parameters[3] = MAP_ANONYMOUS | MAP_PRIVATE; // 建立匿名映射
+        parameters[3] = MAP_ANONYMOUS | MAP_PRIVATE; // 建立匿名映射 yuuki 2.匿名映射是什么，似乎有隐藏注入的效果诶？？
         parameters[4] = 0; //  若需要映射文件到内存中，则为文件的fd
         parameters[5] = 0; //文件映射偏移量
 
         // 调用远程进程的mmap函数 建立远程进程的内存映射 在目标进程中为libxxx.so分配内存
+        // yuuki 1.使用ptrace远程call函数 
         if (ptrace_call(pid, (uintptr_t)mmap_addr, parameters, 6, &CurrentRegs) == -1){
             printf("[-] Call Remote mmap Func Failed, err:%s\n", strerror(errno));
             break;
@@ -77,7 +82,7 @@ int inject_remote_process(pid_t pid, char *LibPath, char *FunctionName, char *Fl
         void *RemoteMapMemoryAddr = (void *)ptrace_getret(&CurrentRegs);
         printf("[+] Remote Process Map Memory Addr:0x%lx\n", (uintptr_t)RemoteMapMemoryAddr);
 
-        // 分别获取dlopen、dlsym、dlclose等函数的地址
+        // 分别获取远程进程内dlopen、dlsym、dlclose等函数的地址
         void *dlopen_addr, *dlsym_addr, *dlclose_addr, *dlerror_addr;
         dlopen_addr = get_dlopen_address(pid);
         dlsym_addr = get_dlsym_address(pid);
@@ -105,12 +110,13 @@ int inject_remote_process(pid_t pid, char *LibPath, char *FunctionName, char *Fl
         parameters[1] = RTLD_NOW | RTLD_GLOBAL; // dlopen的标识
 
         // 执行dlopen 载入so
+        // yuuki 3.为什么不能直接 parameters[0] = (void*)"so_path"呢 我猜测是因为selinux，这里创建的字符串是存在于自己进程的，而目标是远程进程
         if (ptrace_call(pid, (uintptr_t) dlopen_addr, parameters, 2, &CurrentRegs) == -1) {
             printf("[+] Call Remote dlopen Func Failed\n");
             break;
         }
 
-        // RemoteModuleAddr为远程进程加载注入模块的地址
+        // RemoteModuleAddr为远程进程加载注入模块的地址 yuuki 即dlopen返回的地址
         void *RemoteModuleAddr = (void *) ptrace_getret(&CurrentRegs);
         printf("[+] ptrace_call dlopen success, Remote Process load module Addr:0x%lx\n",(long) RemoteModuleAddr);
 
@@ -129,27 +135,29 @@ int inject_remote_process(pid_t pid, char *LibPath, char *FunctionName, char *Fl
         }
 
         // 判断是否传入symbols
+        // yuuki 4.什么鸡扒，“是否传入symbols” 是什么意思？？？
+        // yuuki 4.symbols是控制台的参数 如：cd /data/local/tmp && ./Inject -f -n bin.mt.plus -so /data/local/tmp/libHook.so -symbols hello
         if (strcmp(FunctionName,"symbols") != 0){
             printf("[+] func symbols is %s\n", FunctionName);
             // 传入了函数的symbols
             printf("[+] Have func !!\n");
             // 将so库中需要调用的函数名称写入到远程进程内存空间中
-            if (ptrace_writedata(pid, (uint8_t *) RemoteMapMemoryAddr + strlen(LibPath) + 2,(uint8_t *) FunctionName, strlen(FunctionName) + 1) == -1) {
+            if (ptrace_writedata(pid, (uint8_t *) RemoteMapMemoryAddr + strlen(LibPath) + 2,(uint8_t *) FunctionName, strlen(FunctionName) + 1) == -1) {// yuuki 5.为什么这里是+2？？
                 printf("[-] Write FunctionName:%s to RemoteProcess error\n", FunctionName);
                 break;
             }
 
             // 设置dlsym的参数，返回值为远程进程内函数的地址 调用XXX功能
             // void *dlsym(void *handle, const char *symbol);
-            parameters[0] = (uintptr_t) RemoteModuleAddr;
+            parameters[0] = (uintptr_t) RemoteModuleAddr; //yuuki 注入的so在目标进程内存空间的起始地址
             parameters[1] = (uintptr_t) ((uint8_t *) RemoteMapMemoryAddr + strlen(LibPath) + 2);
-            //调用dlsym
+            //调用dlsym 解析函数在so里的地址
             if (ptrace_call(pid, (uintptr_t) dlsym_addr, parameters, 2, &CurrentRegs) == -1) {
                 printf("[-] Call Remote dlsym Func Failed\n");
                 break;
             }
 
-            // RemoteModuleFuncAddr为远程进程空间内获取的函数地址
+            // RemoteModuleFuncAddr为远程进程空间内获取的函数地址 yuuki 即dlsym的返回值
             void *RemoteModuleFuncAddr = (void *) ptrace_getret(&CurrentRegs);
             printf("[+] ptrace_call dlsym success, Remote Process ModuleFunc Addr:0x%lx\n",(uintptr_t) RemoteModuleFuncAddr);
 
@@ -163,6 +171,7 @@ int inject_remote_process(pid_t pid, char *LibPath, char *FunctionName, char *Fl
             printf("[+] No func !!\n");
         }
 
+        //yuuki 把原本保存的寄存器状态恢复
         if (ptrace_setregs(pid, &OriginalRegs) == -1) {
             printf("[-] Recover reges failed\n");
             break;
@@ -175,6 +184,17 @@ int inject_remote_process(pid_t pid, char *LibPath, char *FunctionName, char *Fl
             printf("[-] Set Regs Error\n");
         }
         iRet = 0;
+        /*
+        yuuki 总结：
+        由于是动态注入，所以可以在任何时机注入，故需要保存当前寄存器状态
+        先是获取了target_pid的mmap用于申请内存
+        接着使用ptrace_call去call目标进程内的一些函数
+        通过ptrace_call dlsym获取被注入的so的目标函数的地址
+        再通过ptrace_call调用该地址对应的函数
+
+        我的理解是：注入so的本质就是通过调用目标进程自己的dlopen函数加载外部的so
+        加载之后再通过ptrace_call调用目标进程里的so的函数(自己注入的so，他自带的应该也可以)
+        */
     } while (false);
     
     // 解除attach
