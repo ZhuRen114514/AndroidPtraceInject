@@ -391,6 +391,7 @@ void *get_remote_func_addr(pid_t pid, const char *ModuleName, void *LocalFuncAdd
     //获取远程pid的某个模块的起始地址
     RemoteModuleAddr = get_module_base_addr(pid, ModuleName);
     // local_addr - local_handle的值为指定函数(如mmap)在该模块中的偏移量，然后再加上remote_handle，结果就为指定函数在目标进程的虚拟地址
+    //yuuki 都是libc里的函数，所以每个进程里函数相对于模块的偏移都是一样的
     RemoteFuncAddr = (void *)((uintptr_t)LocalFuncAddr - (uintptr_t)LocalModuleAddr + (uintptr_t)RemoteModuleAddr);
 
     printf("[+] [get_remote_func_addr] lmod=0x%lX, rmod=0x%lX, lfunc=0x%lX, rfunc=0x%lX\n", LocalModuleAddr, RemoteModuleAddr, LocalFuncAddr, RemoteFuncAddr);
