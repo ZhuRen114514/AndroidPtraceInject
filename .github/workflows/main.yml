@@ -46,6 +46,7 @@ jobs:
     - name: Build for all ABIs
       run: |
         mkdir -p $BUILD_DIR
+        mkdir -p output
         for ABI in $ABI_LIST; do
           echo -e "\n\033[44;97m>>> Building for ABI: $ABI\033[0m"
           cd $BUILD_DIR
@@ -56,13 +57,26 @@ jobs:
             -DANDROID_NDK=$ANDROID_NDK \
             -DANDROID_ABI=$ABI \
             -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_MAKE_PROGRAM=ninja \
-            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$GITHUB_WORKSPACE/output/${ABI}/Inject \
-            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$GITHUB_WORKSPACE/output/${ABI}/Hook
+            -DCMAKE_MAKE_PROGRAM=ninja
 
           cmake --build .
+
+          mkdir -p ../output/$ABI
+
+          if [ -f Inject/Inject ]; then
+            cp Inject/Inject ../output/$ABI/
+          fi
+          if [ -f Hook/libHook.so ]; then
+            cp Hook/libHook.so ../output/$ABI/
+          fi
+
           cd ..
         done
+
+    - name: Show build directory files (red color)
+      run: |
+        echo -e "\033[31m=== BUILD DIRECTORY FILES ===\033[0m"
+        find build/ -type f | sed $'s/^/\033[31m&\033[0m/'
 
     - name: Show output directory structure
       run: |
