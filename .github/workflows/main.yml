@@ -1,9 +1,7 @@
-name: Build AndroidPtraceInject (Multi ABI)
+name: Build AndroidPtraceInject (Using build.sh)
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
@@ -14,77 +12,48 @@ jobs:
     env:
       ANDROID_NDK_VERSION: r26b
       BUILD_DIR: build
-      ABI_LIST: "armeabi-v7a arm64-v8a x86"
 
     steps:
-    - name: Checkout source code
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Set up JDK
+    - name: Set up JDK (required by NDK build system)
       uses: actions/setup-java@v3
       with:
-        distribution: 'temurin'
-        java-version: '17'
+        distribution: temurin
+        java-version: 17
 
-    - name: Install required packages
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y ninja-build cmake unzip
 
-    - name: Download Android NDK
+    - name: Download and unzip Android NDK
       run: |
         wget https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip
         unzip android-ndk-${ANDROID_NDK_VERSION}-linux.zip
         echo "ANDROID_NDK=$GITHUB_WORKSPACE/android-ndk-${ANDROID_NDK_VERSION}" >> $GITHUB_ENV
-        echo "CMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/android-ndk-${ANDROID_NDK_VERSION}/build/cmake/android.toolchain.cmake" >> $GITHUB_ENV
 
-    - name: Patch CMakeLists.txt (remove hardcoded NDK path)
+    - name: Remove hardcoded ANDROID_NDK and TOOLCHAIN_FILE from CMakeLists.txt
       run: |
         sed -i '/set(ANDROID_NDK/d' CMakeLists.txt
         sed -i '/set(CMAKE_TOOLCHAIN_FILE/d' CMakeLists.txt
 
-    - name: Build for all ABIs
+    - name: Make build.sh executable
+      run: chmod +x build.sh
+
+    - name: Run build.sh script to build all ABIs
       run: |
-        mkdir -p $BUILD_DIR
-        mkdir -p output
-        for ABI in $ABI_LIST; do
-          echo -e "\n\033[44;97m>>> Building for ABI: $ABI\033[0m"
-          cd $BUILD_DIR
-          rm -rf *
+        ./build.sh
+      env:
+        ANDROID_NDK: ${{ env.ANDROID_NDK }}
 
-          cmake .. -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
-            -DANDROID_NDK=$ANDROID_NDK \
-            -DANDROID_ABI=$ABI \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_MAKE_PROGRAM=ninja
-
-          cmake --build .
-
-          mkdir -p ../output/$ABI
-
-          if [ -f Inject/Inject ]; then
-            cp Inject/Inject ../output/$ABI/
-          fi
-          if [ -f Hook/libHook.so ]; then
-            cp Hook/libHook.so ../output/$ABI/
-          fi
-
-          cd ..
-        done
-
-    - name: Show build directory files (red color)
+    - name: Show build output files
       run: |
-        echo -e "\033[31m=== BUILD DIRECTORY FILES ===\033[0m"
-        find build/ -type f | sed $'s/^/\033[31m&\033[0m/'
+        find output/ -type f || echo "No output directory or files found."
 
-    - name: Show output directory structure
-      run: |
-        echo "=== OUTPUT STRUCTURE ==="
-        find output/
-
-    - name: Upload all build artifacts
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: android-ptrace-inject-multi-abi
+        name: android-ptrace-inject-artifacts
         path: output/
