@@ -1,4 +1,4 @@
-name: Build AndroidPtraceInject
+name: Build AndroidPtraceInject (Multi ABI)
 
 on:
   push:
@@ -13,8 +13,8 @@ jobs:
 
     env:
       ANDROID_NDK_VERSION: r26b
-      ANDROID_ABI: arm64-v8a
       BUILD_DIR: build
+      ABI_LIST: "armeabi-v7a arm64-v8a x86"
 
     steps:
     - name: Checkout source code
@@ -38,27 +38,37 @@ jobs:
         echo "ANDROID_NDK=$GITHUB_WORKSPACE/android-ndk-${ANDROID_NDK_VERSION}" >> $GITHUB_ENV
         echo "CMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/android-ndk-${ANDROID_NDK_VERSION}/build/cmake/android.toolchain.cmake" >> $GITHUB_ENV
 
-    - name: Configure CMake
+    - name: Patch CMakeLists.txt (remove hardcoded NDK path)
       run: |
-        mkdir $BUILD_DIR
-        cd $BUILD_DIR
-        cmake .. -G Ninja \
-          -DCMAKE_MAKE_PROGRAM=ninja \
-          -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
-          -DANDROID_NDK=$ANDROID_NDK \
-          -DANDROID_ABI=${ANDROID_ABI} \
-          -DANDROID_PLATFORM=android-21 \
-          -DOVERWRITE_HARDCODED_NDK=ON
+        sed -i '/set(ANDROID_NDK/d' CMakeLists.txt
+        sed -i '/set(CMAKE_TOOLCHAIN_FILE/d' CMakeLists.txt
 
-    - name: Build project
+    - name: Build for all ABIs
       run: |
-        cd $BUILD_DIR
-        cmake --build .
+        mkdir -p $BUILD_DIR
+        for ABI in $ABI_LIST; do
+          echo -e "\n\033[44;97m>>> Building for ABI: $ABI\033[0m"
+          cd $BUILD_DIR
+          rm -rf *
 
-    - name: Upload build artifacts
+          cmake .. -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
+            -DANDROID_NDK=$ANDROID_NDK \
+            -DANDROID_ABI=$ABI \
+            -DANDROID_PLATFORM=android-21 \
+            -DCMAKE_MAKE_PROGRAM=ninja
+
+          cmake --build .
+
+          # 保存构建产物
+          mkdir -p ../output/$ABI
+          cp Inject/Inject ../output/$ABI/ || true
+          cp Hook/libHook.so ../output/$ABI/ || true
+          cd ..
+        done
+
+    - name: Upload all build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: android-ptrace-inject-${{ env.ANDROID_ABI }}
-        path: |
-          build/Inject/Inject
-          build/Hook/libHook.so
+        name: android-ptrace-inject-multi-abi
+        path: output/
