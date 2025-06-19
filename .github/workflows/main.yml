@@ -1,0 +1,66 @@
+name: Android Ptrace Inject Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Android NDK
+      uses: android-actions/setup-android@v3
+      with:
+        ndk-version: "25c"  # 推荐使用稳定的NDK版本
+
+    - name: Install build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build
+
+    - name: Configure and Build
+      run: |
+        # 设置必要的环境变量
+        echo "ANDROID_NDK=$ANDROID_NDK" >> $GITHUB_ENV
+        echo "CMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake" >> $GITHUB_ENV
+        
+        # 创建构建目录
+        mkdir -p build
+        cd build
+        
+        # 为每个支持的ABI构建
+        for abi in "arm64-v8a" "x86"; do
+          echo "Building for $abi..."
+          
+          # 创建ABI专用目录
+          mkdir -p $abi
+          cd $abi
+          
+          # 运行CMake配置
+          cmake ../.. \
+            -DANDROID_ABI=$abi \
+            -DANDROID_NDK=$ANDROID_NDK \
+            -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
+            -DANDROID_NATIVE_API_LEVEL=21 \
+            -G Ninja
+            
+          # 执行构建
+          cmake --build .
+          cd ..
+        done
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-output
+        path: |
+          build/arm64-v8a/Inject/Inject
+          build/arm64-v8a/Hook/libHook.so
+          build/x86/Inject/Inject
+          build/x86/Hook/libHook.so
