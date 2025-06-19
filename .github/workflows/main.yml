@@ -43,10 +43,12 @@ jobs:
         mkdir $BUILD_DIR
         cd $BUILD_DIR
         cmake .. -G Ninja \
-          -DANDROID_ABI=${ANDROID_ABI} \
+          -DCMAKE_MAKE_PROGRAM=ninja \
           -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE \
           -DANDROID_NDK=$ANDROID_NDK \
-          -DANDROID_PLATFORM=android-21
+          -DANDROID_ABI=${ANDROID_ABI} \
+          -DANDROID_PLATFORM=android-21 \
+          -DOVERWRITE_HARDCODED_NDK=ON
 
     - name: Build project
       run: |
