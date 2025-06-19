@@ -56,16 +56,18 @@ jobs:
             -DANDROID_NDK=$ANDROID_NDK \
             -DANDROID_ABI=$ABI \
             -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_MAKE_PROGRAM=ninja
+            -DCMAKE_MAKE_PROGRAM=ninja \
+            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$GITHUB_WORKSPACE/output/${ABI}/Inject \
+            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$GITHUB_WORKSPACE/output/${ABI}/Hook
 
           cmake --build .
-
-          # 保存构建产物
-          mkdir -p ../output/$ABI
-          cp Inject/Inject ../output/$ABI/ || true
-          cp Hook/libHook.so ../output/$ABI/ || true
           cd ..
         done
+
+    - name: Show output directory structure
+      run: |
+        echo "=== OUTPUT STRUCTURE ==="
+        find output/
 
     - name: Upload all build artifacts
       uses: actions/upload-artifact@v4
